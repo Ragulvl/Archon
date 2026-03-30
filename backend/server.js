@@ -7,6 +7,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const generateRoute = require("./routes/generate");
 
@@ -23,7 +24,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ── Routes ────────────────────────────────────────────────────
+// ── API Routes ────────────────────────────────────────────────
 app.use("/generate", generateRoute);
 
 // ── Health check ──────────────────────────────────────────────
@@ -31,9 +32,13 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ── 404 fallback ──────────────────────────────────────────────
-app.use((_req, res) => {
-  res.status(404).json({ error: "Not found" });
+// ── Serve frontend in production ──────────────────────────────
+const distPath = path.join(__dirname, "..", "dist");
+app.use(express.static(distPath));
+
+// SPA fallback — serve index.html for any non-API route
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
 });
 
 // ── Error handler ─────────────────────────────────────────────
