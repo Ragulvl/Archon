@@ -1,4 +1,8 @@
-const { KeyRotator } = require("../utils/keyRotation");
+/**
+ * LLM Service — Groq API
+ * Uses Groq's fast inference for architecture + code generation.
+ * Groq API is OpenAI-compatible: POST https://api.groq.com/openai/v1/chat/completions
+ */
 
 // ── System Prompt (strict JSON enforcement) ───────────────────
 const SYSTEM_PROMPT = `You are "Archon", a world-class full-stack developer and system architect AI known for producing STUNNING, production-quality code.
@@ -144,15 +148,23 @@ IMPORTANT: The frontend must look like a REAL, POLISHED website — not a basic 
 Remember: respond with ONLY the JSON object. First character must be {, last must be }.`;
 }
 
-// ── OpenRouter Call (system + user messages) ──────────────────
-async function callOpenRouter(apiKey, model, userInput) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+// ── Groq API Configuration ───────────────────────────────────
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const API_TIMEOUT_MS = 60000; // 60 second timeout
+
+// Models to try in priority order
+const GROQ_MODELS = [
+  { id: "llama-3.3-70b-versatile",   label: "Llama 3.3 70B" },
+  { id: "llama-3.1-8b-instant",      label: "Llama 3.1 8B" },
+];
+
+// ── Groq API Call ─────────────────────────────────────────────
+async function callGroq(apiKey, model, userInput) {
+  const response = await fetch(GROQ_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "http://localhost:5000",
-      "X-Title": "Archon AI Architect",
     },
     body: JSON.stringify({
       model,
@@ -161,50 +173,19 @@ async function callOpenRouter(apiKey, model, userInput) {
         { role: "user", content: buildUserMessage(userInput) },
       ],
       temperature: 0.2,
-      max_tokens: 16000,
+      max_tokens: 8000,
       response_format: { type: "json_object" },
     }),
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     const errBody = await response.text();
-    throw new Error(`OpenRouter ${response.status}: ${errBody}`);
+    throw new Error(`Groq ${response.status}: ${errBody}`);
   }
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content || "";
-}
-
-// ── Hugging Face Call ─────────────────────────────────────────
-async function callHuggingFace(apiKey, userInput) {
-  // HF Inference API uses a single prompt string, so combine system + user
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n${buildUserMessage(userInput)}`;
-
-  const response = await fetch(
-    "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-Coder-32B-Instruct",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        inputs: fullPrompt,
-        parameters: { max_new_tokens: 16000, temperature: 0.2 },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`HuggingFace ${response.status}: ${errBody}`);
-  }
-
-  const data = await response.json();
-  if (Array.isArray(data)) {
-    return data[0]?.generated_text || "";
-  }
-  return data?.generated_text || data?.[0]?.generated_text || "";
 }
 
 // ── Parse JSON from LLM response ─────────────────────────────
@@ -242,66 +223,67 @@ function extractJSON(raw) {
 
 // ── Main generate function ────────────────────────────────────
 async function generate(userInput) {
-  const openRouterKeys = (process.env.OPENROUTER_API_KEYS || "")
+  const groqKeys = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
     .split(",")
     .map((k) => k.trim())
     .filter(Boolean);
-
-  const hfKeys = (process.env.HF_API_KEYS || process.env.HF_API_KEY || "")
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
-
-  const orRotator = new KeyRotator(openRouterKeys);
-  const hfRotator = new KeyRotator(hfKeys);
 
   const steps = [];
 
-  // ─── Step 1: Try Nemotron via OpenRouter (primary) ───
-  if (openRouterKeys.length > 0) {
-    try {
-      steps.push({ step: "Trying Nemotron via OpenRouter...", status: "running" });
-      const raw = await orRotator.tryWithRotation((key) =>
-        callOpenRouter(key, "nvidia/llama-3.1-nemotron-70b-instruct", userInput)
-      );
-      const parsed = extractJSON(raw);
-      steps.push({ step: "Nemotron succeeded", status: "done" });
-      return { data: parsed, steps, model: "nvidia/llama-3.1-nemotron-70b-instruct" };
-    } catch (err) {
-      steps.push({ step: `Nemotron failed: ${err.message}`, status: "error" });
+  if (groqKeys.length === 0) {
+    console.log("[LLM] No Groq API keys configured");
+    steps.push({ step: "No Groq API keys configured", status: "error" });
+    steps.push({ step: "Using demo response", status: "warn" });
+    return { data: getDemoResponse(userInput), steps, model: "demo" };
+  }
+
+  // Try each model in priority order
+  for (let i = 0; i < GROQ_MODELS.length; i++) {
+    const model = GROQ_MODELS[i];
+
+    // Try each key for this model
+    for (const key of groqKeys) {
+      try {
+        steps.push({ step: `Trying ${model.label}…`, status: "running" });
+        console.log(`[LLM] Attempting ${model.id} with key ${key.slice(0, 12)}…`);
+
+        const raw = await callGroq(key, model.id, userInput);
+        const parsed = extractJSON(raw);
+
+        steps.push({ step: `${model.label} succeeded`, status: "done" });
+        console.log(`[LLM] ✓ Success via ${model.id}`);
+        return { data: parsed, steps, model: model.label };
+      } catch (err) {
+        const msg = err.message || "";
+        const is429 = msg.includes("429") || msg.includes("rate_limit");
+        const isTimeout = msg.includes("aborted") || msg.includes("timeout");
+
+        console.log(`[LLM] ✗ ${model.id} failed: ${msg.slice(0, 120)}`);
+
+        if (is429) {
+          steps.push({ step: `${model.label} rate limited`, status: "error" });
+          // Try next key for same model, or next model if last key
+          continue;
+        }
+        if (isTimeout) {
+          steps.push({ step: `${model.label} timed out`, status: "error" });
+          break; // Skip remaining keys for this model — it's slow
+        }
+
+        steps.push({ step: `${model.label} failed`, status: "error" });
+        break; // Unknown error — skip to next model
+      }
     }
 
-    // ─── Step 2: Try Qwen via OpenRouter (secondary) ───
-    try {
-      steps.push({ step: "Trying Qwen via OpenRouter...", status: "running" });
-      const raw = await orRotator.tryWithRotation((key) =>
-        callOpenRouter(key, "qwen/qwen3-coder:free", userInput)
-      );
-      const parsed = extractJSON(raw);
-      steps.push({ step: "Qwen succeeded", status: "done" });
-      return { data: parsed, steps, model: "qwen/qwen3-coder:free" };
-    } catch (err) {
-      steps.push({ step: `Qwen failed: ${err.message}`, status: "error" });
+    // Small delay between models
+    if (i < GROQ_MODELS.length - 1) {
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
-  // ─── Step 3: Fallback to Hugging Face (with key rotation) ───
-  if (hfKeys.length > 0) {
-    try {
-      steps.push({ step: "Falling back to Hugging Face...", status: "running" });
-      const raw = await hfRotator.tryWithRotation((key) =>
-        callHuggingFace(key, userInput)
-      );
-      const parsed = extractJSON(raw);
-      steps.push({ step: "Hugging Face succeeded", status: "done" });
-      return { data: parsed, steps, model: "huggingface/qwen-2.5-coder" };
-    } catch (err) {
-      steps.push({ step: `Hugging Face failed: ${err.message}`, status: "error" });
-    }
-  }
-
-  // ─── All providers failed — return demo data ───
-  steps.push({ step: "All providers failed — using demo response", status: "warn" });
+  // All models failed — return demo data
+  console.log("[LLM] All Groq models exhausted — returning demo data");
+  steps.push({ step: "All models failed — using demo response", status: "warn" });
   return { data: getDemoResponse(userInput), steps, model: "demo" };
 }
 

@@ -7,7 +7,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: OPENROUTER_API_KEYS
-        sync: false
-      - key: HF_API_KEYS
+      - key: GROQ_API_KEYS
         sync: false

@@ -1,172 +1,98 @@
-<div align="center">
+# Archon — AI System Architect
 
-# ⚡ Archon — AI System Architect
+Archon is an AI-powered system architect that generates complete technical blueprints and working frontend code from a single prompt. Powered by **Groq** for blazing-fast inference.
 
-**Generate full-stack architectures and working frontend code from a single prompt.**
+## Features
 
-[![Live Demo](https://img.shields.io/badge/🌐_Live-archon.dinez.in-6ee7b7?style=for-the-badge)](https://archon.dinez.in)
-[![GitHub](https://img.shields.io/badge/GitHub-Ragulvl/Archon-181717?style=for-the-badge&logo=github)](https://github.com/Ragulvl/Archon)
+- **Architecture Generation** — System design, database schemas, API endpoints, tech stack, and scaling strategies
+- **Frontend Code Generation** — Complete HTML/CSS/JS with brand-matching design, responsive layouts, and interactivity
+- **Live Preview** — Instant iframe preview of generated frontend code
+- **File Explorer** — Browse and view generated files with syntax highlighting
+- **Agent Panel** — Real-time generation progress with step-by-step logging
 
-</div>
-
----
-
-## 🎯 What is Archon?
-
-Archon is an AI-powered system design tool that takes a project idea and generates:
-
-- **System Architecture** — features, tech stack, scaling strategies
-- **Database Schema** — production-ready SQL with proper types and constraints
-- **API Endpoints** — RESTful routes with methods and descriptions
-- **Working Frontend** — complete HTML/CSS/JS with brand-matched design
-
-> Type "clone Zomato" → get Zomato-colored UI with restaurant cards, ratings, search.
-> Type "e-commerce marketplace" → get a full product grid with cart UI.
-
----
-
-## 🖥️ Screenshots
-
-| Architecture Tab | Code Tab | Files Tab |
-|:---:|:---:|:---:|
-| System design output | Syntax-highlighted code | Project structure + ZIP download |
-
----
-
-## 🏗️ Architecture
-
-```
-┌──────────────┐     POST /generate     ┌──────────────────┐
-│   React UI   │ ──────────────────────→ │  Express Backend  │
-│  (Vite/8080) │ ←────────────────────── │   (Node/5000)     │
-└──────────────┘     JSON response       └────────┬─────────┘
-                                                  │
-                                    ┌─────────────┼──────────────┐
-                                    ▼             ▼              ▼
-                              ┌──────────┐ ┌──────────┐ ┌──────────────┐
-                              │ Nemotron │ │  Qwen 3  │ │ HuggingFace  │
-                              │ (primary)│ │  (free)  │ │  (fallback)  │
-                              └──────────┘ └──────────┘ └──────────────┘
-```
-
-**Fallback Chain:** Nemotron → Qwen 3 Coder → HuggingFace → Demo Data
-
-**Key Rotation:** 16 OpenRouter keys + 6 HuggingFace keys auto-rotate on rate limits.
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+
-- npm
-
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/Ragulvl/Archon.git
-cd Archon
-
-# Frontend
-npm install
-
-# Backend
-cd backend
-npm install
-```
-
-### 2. Configure API Keys
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env` with your keys:
-
-```env
-OPENROUTER_API_KEYS=sk-or-v1-key1,sk-or-v1-key2,sk-or-v1-key3
-HF_API_KEYS=hf_key1,hf_key2
-PORT=5000
-```
-
-Get keys from:
-- [OpenRouter](https://openrouter.ai/keys) (free tier available)
-- [HuggingFace](https://huggingface.co/settings/tokens)
-
-### 3. Run
-
-```bash
-# Terminal 1 — Backend
-cd backend && node server.js
-
-# Terminal 2 — Frontend
-npm run dev
-```
-
-Open **http://localhost:8080**
-
----
-
-## 📁 Project Structure
-
-```
-Archon/
-├── backend/
-│   ├── server.js              # Express server
-│   ├── routes/generate.js     # POST /generate endpoint
-│   ├── services/llm.js        # LLM chain + brand-aware prompt
-│   ├── utils/keyRotation.js   # API key rotation
-│   ├── .env                   # API keys (gitignored)
-│   └── .env.example           # Template
-├── src/
-│   ├── pages/Index.tsx        # Main page (state hub)
-│   ├── components/
-│   │   ├── ArchonSidebar.tsx  # Input + Generate button
-│   │   ├── MainPanel.tsx      # Architecture/Code/Files tabs
-│   │   ├── AgentPanel.tsx     # Live generation logs
-│   │   ├── StatusBar.tsx      # Status + model info
-│   │   └── TitleBar.tsx       # App title
-│   ├── App.tsx                # Router
-│   ├── main.tsx               # Entry point
-│   └── index.css              # Design system
-├── index.html
-├── vite.config.ts             # Vite + backend proxy
-├── tailwind.config.ts
-└── package.json
-```
-
----
-
-## ✨ Features
-
-- **Brand-Aware Generation** — detects clones (Zomato, Spotify, Netflix) and uses real brand colors
-- **Multi-Provider Fallback** — Nemotron → Qwen → HuggingFace → demo data
-- **16-Key Rotation** — auto-rotates API keys on rate limits
-- **ZIP Download** — downloads individual files (HTML, CSS, JS, schema.sql, architecture.md)
-- **Live Agent Logs** — real-time progress in the agent panel
-- **3-Panel IDE Layout** — sidebar, main editor, agent panel
-- **Dark Theme** — professional IDE-style dark UI
-
----
-
-## 🔧 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Frontend | React 18, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Node.js, Express |
-| LLM Providers | OpenRouter (Nemotron, Qwen), HuggingFace |
-| Styling | Tailwind CSS, custom design tokens |
-| Download | JSZip (client-side ZIP generation) |
+| AI | Groq API (Llama 3.3 70B, Llama 3.1 8B) |
+| Build | Vite, PostCSS |
 
----
+## Quick Start
 
-## 🌐 Deployment
+### Prerequisites
+- Node.js 18+
+- A free [Groq API key](https://console.groq.com/keys)
 
-**Live at:** [archon.dinez.in](https://archon.dinez.in)
+### Setup
 
----
+```bash
+# Install dependencies
+npm install
+cd backend && npm install && cd ..
 
-## 📄 License
+# Configure API key
+cp backend/.env.example backend/.env
+# Edit backend/.env and add your GROQ_API_KEYS=gsk_...
 
-MIT © [Ragulvl](https://github.com/Ragulvl)
+# Start development server
+npm run dev
+```
+
+This starts both the Vite frontend (port 8080) and Express backend (port 5000).
+
+### Production Build
+
+```bash
+npm run build
+cd backend && node server.js
+```
+
+## Project Structure
+
+```
+archon/
+├── src/                    # React frontend
+│   ├── components/         # UI components
+│   │   ├── TitleBar.tsx    # App header with branding
+│   │   ├── ArchonSidebar.tsx # Prompt input sidebar
+│   │   ├── MainPanel.tsx   # Architecture/Code/Files/Preview tabs
+│   │   ├── AgentPanel.tsx  # Generation progress logs
+│   │   └── StatusBar.tsx   # Connection & model status
+│   ├── pages/
+│   │   ├── Index.tsx       # Main page with generation logic
+│   │   └── NotFound.tsx    # 404 page
+│   ├── App.tsx             # Router setup
+│   ├── index.css           # Design system & global styles
+│   └── main.tsx            # Entry point
+├── backend/                # Express API server
+│   ├── server.js           # Server entry point
+│   ├── routes/generate.js  # POST /generate endpoint
+│   ├── services/llm.js     # Groq API integration
+│   ├── .env                # API keys (not in git)
+│   └── .env.example        # Template for env vars
+├── public/                 # Static assets
+│   ├── Logo.png            # App logo
+│   ├── favicon.svg         # Browser icon
+│   └── robots.txt          # SEO
+├── render.yaml             # Render.com deployment config
+├── tailwind.config.ts      # Tailwind CSS theme
+├── vite.config.ts          # Vite build config
+└── package.json            # Dependencies & scripts
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `GROQ_API_KEYS` | Comma-separated Groq API keys |
+| `PORT` | Backend port (default: 5000) |
+
+## Deployment
+
+Configured for [Render.com](https://render.com) via `render.yaml`. Set `GROQ_API_KEYS` as an environment variable in the Render dashboard.
+
+## License
+
+MIT
