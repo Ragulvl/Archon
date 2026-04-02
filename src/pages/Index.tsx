@@ -15,11 +15,7 @@ export interface GeneratedData {
     techStack?: Record<string, string>;
     scalingStrategy?: Record<string, string>;
   };
-  frontend?: {
-    "index.html"?: string;
-    "style.css"?: string;
-    "script.js"?: string;
-  };
+  frontend?: Record<string, string>;
 }
 
 export interface LogEntry {

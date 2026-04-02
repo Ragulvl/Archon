@@ -172,7 +172,7 @@ function EmptyState() {
           Describe your vision
         </h2>
         <p className="text-sm text-muted-foreground/40 text-center max-w-sm leading-relaxed">
-          Archon will generate a full-stack architecture, database schema, API endpoints, and working frontend code.
+          Archon will generate a full-stack architecture, database schema, API endpoints, and a working React frontend.
         </p>
       </div>
     </div>
@@ -186,7 +186,7 @@ function SkeletonLoader() {
       <div className="text-center mb-6">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-xs text-muted-foreground/40 font-mono">
           <Loader2 className="w-3.5 h-3.5 animate-spin text-violet/60" />
-          Generating architecture & code
+          Generating architecture & React code
           <span className="inline-flex gap-0.5">
             <span className="w-1 h-1 rounded-full bg-violet/50 animate-bounce-dot" />
             <span className="w-1 h-1 rounded-full bg-violet/50 animate-bounce-dot" style={{ animationDelay: "0.16s" }} />
@@ -380,7 +380,16 @@ function CodeView({ frontend }: { frontend?: GeneratedData["frontend"]; }) {
     );
   }
 
-  const files = Object.entries(frontend) as [string, string][];
+  // Sort files: App.jsx first, then main.jsx, then index.css, then index.html, then rest
+  const FILE_ORDER = ["App.jsx", "main.jsx", "index.css", "index.html"];
+  const files = Object.entries(frontend).sort(([a], [b]) => {
+    const ai = FILE_ORDER.indexOf(a);
+    const bi = FILE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
 
   return (
     <div className="space-y-4">
@@ -395,19 +404,69 @@ function CodeView({ frontend }: { frontend?: GeneratedData["frontend"]; }) {
 function PreviewView({ data }: { data: GeneratedData }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [previewReady, setPreviewReady] = useState(false);
 
   const viewportWidths = { desktop: "100%", tablet: "768px", mobile: "375px" };
 
+  // Build an in-browser React preview using Babel standalone + React UMD
   const srcDoc = useMemo(() => {
     if (!data.frontend) return "";
-    const html = cleanCode(data.frontend["index.html"] || "");
-    const css = cleanCode(data.frontend["style.css"] || "");
-    const js = cleanCode(data.frontend["script.js"] || "");
+
+    const css = cleanCode(data.frontend["index.css"] || "");
+    const appJsx = cleanCode(data.frontend["App.jsx"] || "");
+    const indexHtml = cleanCode(data.frontend["index.html"] || "");
+
+    // Extract <head> content from the generated index.html for CDN links (Font Awesome, Google Fonts)
+    const headMatch = indexHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+    const headContent = headMatch ? headMatch[1] : "";
+    // Pull out only <link> and <meta> tags from head
+    const linkTags = (headContent.match(/<link[^>]*>/gi) || []).join("\n");
+    const metaTags = (headContent.match(/<meta[^>]*>/gi) || []).join("\n");
+
+    // Extract title
+    const titleMatch = indexHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1] : "Preview";
+
+    // Clean the App.jsx: remove import/export statements for inline execution
+    const cleanedAppJsx = appJsx
+      .replace(/^\s*import\s+.*?['"]\s*;?\s*$/gm, "")  // Remove all import lines
+      .replace(/^\s*export\s+default\s+\w+\s*;?\s*$/gm, "")  // Remove export default App;
+      .trim();
+
     return `<!DOCTYPE html>
-<html><head><style>${css}</style></head>
-<body>${html.replace(/<html>|<\/html>|<head>.*<\/head>|<!DOCTYPE html>/gis, "")}
-<script>${js}<\/script></body></html>`;
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  ${metaTags}
+  <title>${title}</title>
+  ${linkTags}
+  <style>${css}</style>
+  <!-- React UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>
+  <!-- Babel Standalone for JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    ${cleanedAppJsx}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  <\/script>
+</body>
+</html>`;
   }, [data.frontend]);
+
+  useEffect(() => {
+    setPreviewReady(false);
+    const timer = setTimeout(() => setPreviewReady(true), 500);
+    return () => clearTimeout(timer);
+  }, [srcDoc]);
 
   if (!data.frontend) {
     return (
@@ -439,6 +498,11 @@ function PreviewView({ data }: { data: GeneratedData }) {
             {v.label}
           </button>
         ))}
+
+        {/* React badge */}
+        <div className="ml-auto flex items-center gap-1.5 text-[9px] text-muted-foreground/30 font-mono px-2 py-1 rounded-md glass">
+          <span className="text-cyan/50">⚛</span> React Preview
+        </div>
       </div>
 
       {/* Iframe container */}
@@ -447,12 +511,20 @@ function PreviewView({ data }: { data: GeneratedData }) {
           className="glass rounded-xl overflow-hidden transition-all duration-500 flex flex-col"
           style={{ width: viewportWidths[viewport], maxWidth: "100%", minHeight: "calc(100vh - 180px)" }}
         >
+          {!previewReady && (
+            <div className="flex-1 flex items-center justify-center bg-surface-1/50">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground/40 font-mono">
+                <Loader2 className="w-4 h-4 animate-spin text-violet/50" />
+                Loading React preview…
+              </div>
+            </div>
+          )}
           <iframe
             ref={iframeRef}
             srcDoc={srcDoc}
-            className="w-full flex-1 bg-white rounded-xl border-0"
+            className={`w-full flex-1 bg-white rounded-xl border-0 transition-opacity duration-300 ${previewReady ? 'opacity-100' : 'opacity-0 absolute'}`}
             sandbox="allow-scripts"
-            title="Preview"
+            title="React Preview"
             style={{ minHeight: "500px" }}
           />
         </div>
@@ -468,8 +540,73 @@ function FilesView({ data }: { data: GeneratedData }) {
   const handleDownload = useCallback(async () => {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
-    const docs = zip.folder("docs")!;
+    const src = zip.folder("src")!;
 
+    // — Build a proper Vite + React project ZIP —
+
+    // package.json
+    zip.file("package.json", JSON.stringify({
+      name: "archon-react-project",
+      private: true,
+      version: "1.0.0",
+      type: "module",
+      scripts: {
+        dev: "vite",
+        build: "vite build",
+        preview: "vite preview",
+      },
+      dependencies: {
+        react: "^18.3.1",
+        "react-dom": "^18.3.1",
+      },
+      devDependencies: {
+        "@vitejs/plugin-react": "^4.3.1",
+        vite: "^5.4.0",
+      },
+    }, null, 2));
+
+    // vite.config.js
+    zip.file("vite.config.js", `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})
+`);
+
+    // README.md
+    zip.file("README.md", `# Archon Generated React Project
+
+## Getting Started
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+## Built with
+- React 18
+- Vite 5
+- Generated by [Archon](https://archon.dinez.in)
+`);
+
+    // Frontend source files → src/
+    if (data.frontend) {
+      Object.entries(data.frontend).forEach(([filename, code]) => {
+        if (filename === "index.html") {
+          // index.html goes at root (Vite convention)
+          zip.file("index.html", cleanCode(code));
+        } else {
+          // All other files go in src/
+          src.file(filename, cleanCode(code));
+        }
+      });
+    }
+
+    // Architecture docs
+    const docs = zip.folder("docs")!;
     if (data.architecture) {
       let md = "# Architecture\n\n";
       if (data.architecture.features) {
@@ -516,17 +653,11 @@ function FilesView({ data }: { data: GeneratedData }) {
       }
     }
 
-    if (data.frontend) {
-      Object.entries(data.frontend).forEach(([filename, code]) => {
-        zip.file(filename, code as string);
-      });
-    }
-
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "archon-project.zip";
+    a.download = "archon-react-project.zip";
     a.click();
     URL.revokeObjectURL(url);
   }, [data]);
@@ -539,6 +670,20 @@ function FilesView({ data }: { data: GeneratedData }) {
 
   const frontendFiles = data.frontend ? Object.keys(data.frontend) : [];
   const archSections = data.architecture ? Object.keys(data.architecture) : [];
+
+  // Separate root files vs nested files (like components/Navbar.jsx)
+  const rootFiles = frontendFiles.filter((f) => !f.includes("/") && f !== "index.html");
+  const nestedFiles = frontendFiles.filter((f) => f.includes("/"));
+  const hasIndexHtml = frontendFiles.includes("index.html");
+
+  // Group nested files by directory
+  const nestedDirs: Record<string, string[]> = {};
+  nestedFiles.forEach((f) => {
+    const parts = f.split("/");
+    const dir = parts.slice(0, -1).join("/");
+    if (!nestedDirs[dir]) nestedDirs[dir] = [];
+    nestedDirs[dir].push(parts[parts.length - 1]);
+  });
 
   return (
     <div className="space-y-4">
@@ -567,47 +712,95 @@ function FilesView({ data }: { data: GeneratedData }) {
       {/* File tree */}
       <Section title="Project Structure">
         <div className="glass rounded-xl p-5 font-mono text-xs">
-          <div className="text-foreground/85">📁 archon-project/</div>
-          {frontendFiles.length > 0 && (
-            <div className="ml-4 mt-1.5 space-y-1">
-              {frontendFiles.map((file, i) => (
+          <div className="text-foreground/85">📁 archon-react-project/</div>
+
+          {/* Root project files */}
+          <div className="ml-4 mt-1.5 space-y-1">
+            {hasIndexHtml && (
+              <div className="text-foreground/65 flex items-center gap-1.5">
+                <span className="text-muted-foreground/30">├──</span>
+                <span className="text-yellow">index.html</span>
+              </div>
+            )}
+            <div className="text-foreground/65 flex items-center gap-1.5">
+              <span className="text-muted-foreground/30">├──</span>
+              <span className="text-green">package.json</span>
+            </div>
+            <div className="text-foreground/65 flex items-center gap-1.5">
+              <span className="text-muted-foreground/30">├──</span>
+              <span className="text-green">vite.config.js</span>
+            </div>
+            <div className="text-foreground/65 flex items-center gap-1.5">
+              <span className="text-muted-foreground/30">├──</span>
+              <span className="text-foreground/85">📁 src/</span>
+            </div>
+
+            {/* src/ contents */}
+            <div className="ml-6 space-y-1">
+              {rootFiles.map((file, i) => (
                 <div key={file} className="text-foreground/65 flex items-center gap-1.5">
                   <span className="text-muted-foreground/30">
-                    {i === frontendFiles.length - 1 && archSections.length === 0 ? "└──" : "├──"}
+                    {i < rootFiles.length - 1 || Object.keys(nestedDirs).length > 0 ? "├──" : "└──"}
                   </span>
-                  <span className="text-cyan">{file}</span>
+                  <span className={file.endsWith(".jsx") ? "text-cyan" : file.endsWith(".css") ? "text-purple" : "text-foreground/65"}>
+                    {file}
+                  </span>
+                </div>
+              ))}
+
+              {/* Nested directories (e.g., components/) */}
+              {Object.entries(nestedDirs).map(([dir, files], di) => (
+                <div key={dir}>
+                  <div className="text-foreground/65 flex items-center gap-1.5">
+                    <span className="text-muted-foreground/30">
+                      {di < Object.keys(nestedDirs).length - 1 ? "├──" : "└──"}
+                    </span>
+                    <span className="text-foreground/85">📁 {dir}/</span>
+                  </div>
+                  <div className="ml-6 space-y-1">
+                    {files.map((file, fi) => (
+                      <div key={file} className="text-foreground/65 flex items-center gap-1.5">
+                        <span className="text-muted-foreground/30">
+                          {fi < files.length - 1 ? "├──" : "└──"}
+                        </span>
+                        <span className="text-cyan">{file}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
-          )}
-          {archSections.length > 0 && (
-            <div className="ml-4 mt-1.5 space-y-1">
-              <div className="text-foreground/65 flex items-center gap-1.5">
-                <span className="text-muted-foreground/30">└──</span>
-                <span className="text-foreground/85">📁 docs/</span>
-              </div>
-              <div className="ml-6 space-y-1">
-                {data.architecture?.features && (
-                  <div className="text-foreground/65 flex items-center gap-1.5">
-                    <span className="text-muted-foreground/30">├──</span>
-                    <span className="text-yellow">architecture.md</span>
-                  </div>
-                )}
-                {data.architecture?.databaseSchema && (
-                  <div className="text-foreground/65 flex items-center gap-1.5">
-                    <span className="text-muted-foreground/30">├──</span>
-                    <span className="text-green">schema.sql</span>
-                  </div>
-                )}
-                {data.architecture?.apiEndpoints && data.architecture.apiEndpoints.length > 0 && (
-                  <div className="text-foreground/65 flex items-center gap-1.5">
-                    <span className="text-muted-foreground/30">└──</span>
-                    <span className="text-yellow">api-endpoints.md</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+
+            {/* Docs */}
+            {archSections.length > 0 && (
+              <>
+                <div className="text-foreground/65 flex items-center gap-1.5">
+                  <span className="text-muted-foreground/30">└──</span>
+                  <span className="text-foreground/85">📁 docs/</span>
+                </div>
+                <div className="ml-6 space-y-1">
+                  {data.architecture?.features && (
+                    <div className="text-foreground/65 flex items-center gap-1.5">
+                      <span className="text-muted-foreground/30">├──</span>
+                      <span className="text-yellow">architecture.md</span>
+                    </div>
+                  )}
+                  {data.architecture?.databaseSchema && (
+                    <div className="text-foreground/65 flex items-center gap-1.5">
+                      <span className="text-muted-foreground/30">├──</span>
+                      <span className="text-green">schema.sql</span>
+                    </div>
+                  )}
+                  {data.architecture?.apiEndpoints && data.architecture.apiEndpoints.length > 0 && (
+                    <div className="text-foreground/65 flex items-center gap-1.5">
+                      <span className="text-muted-foreground/30">└──</span>
+                      <span className="text-yellow">api-endpoints.md</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </Section>
     </div>
@@ -645,7 +838,9 @@ function CodeBlock({ filename, code }: { filename: string; code: string }) {
     html: { label: "HTML", prism: "markup" },
     css: { label: "CSS", prism: "css" },
     js: { label: "JavaScript", prism: "javascript" },
+    jsx: { label: "React JSX", prism: "javascript" },
     ts: { label: "TypeScript", prism: "typescript" },
+    tsx: { label: "React TSX", prism: "typescript" },
     json: { label: "JSON", prism: "json" },
   };
   const lang = langMap[ext] || { label: ext.toUpperCase(), prism: ext };
