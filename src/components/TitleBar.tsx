@@ -34,7 +34,7 @@ const TitleBar = () => {
       {/* Right — version badge */}
       <div className="ml-auto flex items-center gap-3">
         <div className="px-2.5 py-1 rounded-full glass text-[9px] font-mono text-muted-foreground/50 tracking-wider">
-          v0.1.0
+          v1.0.0
         </div>
       </div>
 

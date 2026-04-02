@@ -1,4 +1,4 @@
-import { Loader2, Wifi, WifiOff } from "lucide-react";
+import { Loader2, Wifi } from "lucide-react";
 
 interface StatusBarProps {
   loading: boolean;
@@ -44,7 +44,7 @@ const StatusBar = ({ loading, error, model }: StatusBarProps) => {
             <div className="w-px h-3 bg-border/20" />
           </>
         )}
-        <span className="text-muted-foreground/20">Archon v0.1.0</span>
+        <span className="text-muted-foreground/20">Archon v1.0.0</span>
       </div>
     </div>
   );
