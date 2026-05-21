@@ -1,0 +1,209 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ArtifactType {
+  ARCHITECTURE
+  FRONTEND
+  BACKEND
+  DATABASE
+  API_ROUTES
+  DEPLOYMENT
+  FULL_BUILD
+}
+
+enum AgentType {
+  PLANNER
+  ARCHITECTURE
+  FRONTEND
+  BACKEND
+  DATABASE
+  REPAIR
+  EXPLAIN
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id          String    @id @default(cuid())
+  email       String?   @unique
+  name        String?
+  guestToken  String?   @unique @map("guest_token")
+  avatarUrl   String?   @map("avatar_url")
+  projects    Project[]
+  apiKeys     ApiKey[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Project {
+  id           String         @id @default(cuid())
+  name         String
+  description  String?
+  userId       String         @map("user_id")
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions     ChatSession[]
+  artifacts    Artifact[]
+  context      ProjectContext?
+  usageLogs    UsageLog[]
+  deployments  Deployment[]
+  status       ProjectStatus  @default(ACTIVE)
+  thumbnail    String?        // S3 URL
+  techStack    Json?          @map("tech_stack")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  projectId String        @map("project_id")
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String?
+  messages  ChatMessage[]
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id         String      @id @default(cuid())
+  sessionId  String      @map("session_id")
+  session    ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role       MessageRole
+  content    String      @db.Text
+  artifacts  Artifact[]
+  metadata   Json?       // { model, promptTokens, completionTokens, agentPipeline, durationMs }
+  tokenCount Int?        @map("token_count")
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+model Artifact {
+  id          String        @id @default(cuid())
+  projectId   String        @map("project_id")
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messageId   String?       @map("message_id")
+  message     ChatMessage?  @relation(fields: [messageId], references: [id])
+  type        ArtifactType
+  name        String
+  content     String        @db.Text // JSON-encoded ArtifactPayload
+  version     Int           @default(1)
+  storagePath String?       @map("storage_path") // S3 key for large artifacts
+  files       GeneratedFile[]
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([projectId, type])
+  @@index([messageId])
+  @@map("artifacts")
+}
+
+model GeneratedFile {
+  id         String   @id @default(cuid())
+  artifactId String   @map("artifact_id")
+  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  path       String   // e.g. "src/App.jsx"
+  content    String   @db.Text
+  language   String?
+  sizeBytes  Int?     @map("size_bytes")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([artifactId])
+  @@map("generated_files")
+}
+
+model ProjectContext {
+  id          String   @id @default(cuid())
+  projectId   String   @unique @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  summary     String?  @db.Text  // AI-compressed context summary
+  techStack   Json?    @map("tech_stack")
+  decisions   Json?    // Array of { timestamp, decision }
+  lastUpdated DateTime @default(now()) @map("last_updated")
+
+  @@map("project_contexts")
+}
+
+model UsageLog {
+  id               String   @id @default(cuid())
+  projectId        String?  @map("project_id")
+  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  model            String
+  provider         String   @default("openrouter")
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  totalTokens      Int      @map("total_tokens")
+  costCents        Int?     @map("cost_cents")
+  agentType        AgentType? @map("agent_type")
+  durationMs       Int?     @map("duration_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("usage_logs")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String   // "openrouter", "groq", "openai" etc.
+  keyHash   String   @map("key_hash") // bcrypt hash — never store plaintext
+  label     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  lastUsed  DateTime? @map("last_used")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, provider])
+  @@map("api_keys")
+}
+
+model Deployment {
+  id          String   @id @default(cuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider    String   // "aws", "vercel", "render" etc.
+  status      String   @default("pending") // pending | running | success | failed
+  url         String?
+  logs        String?  @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@map("deployments")
+}
