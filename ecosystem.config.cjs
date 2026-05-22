@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name:         'archon-backend',
-      script:       'dist/server.js',
+      script:       'dist/backend/src/server.js',
       cwd:          './backend',
       instances:    2,
       exec_mode:    'cluster',
