@@ -1,8 +1,29 @@
 import { z } from 'zod';
 import path from 'path';
 import dotenv from 'dotenv';
+import fs from 'fs';
 
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+// Try to find the .env file in multiple common locations
+const envPaths = [
+  path.join(process.cwd(), '.env'),
+  path.join(process.cwd(), 'backend/.env'),
+  path.join(__dirname, '../../.env'),
+  path.join(__dirname, '../../../../.env'),
+];
+
+let envLoaded = false;
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    envLoaded = true;
+    break;
+  }
+}
+
+// Fallback to default dotenv loading if none of the specific paths exist
+if (!envLoaded) {
+  dotenv.config();
+}
 
 const envSchema = z.object({
   // Server
