@@ -2,7 +2,12 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // binaryTargets ensures the correct native binary is shipped for:
+  //   native       → build machine (Windows / macOS for local dev)
+  //   debian-openssl-3.0.x → Ubuntu 22.04 EC2 (OpenSSL 3)
+  //   linux-musl-openssl-3.0.x → Alpine-based Docker containers (optional)
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -159,18 +164,18 @@ model ProjectContext {
 }
 
 model UsageLog {
-  id               String   @id @default(cuid())
-  projectId        String?  @map("project_id")
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id               String    @id @default(cuid())
+  projectId        String?   @map("project_id")
+  project          Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   model            String
-  provider         String   @default("openrouter")
-  promptTokens     Int      @map("prompt_tokens")
-  completionTokens Int      @map("completion_tokens")
-  totalTokens      Int      @map("total_tokens")
-  costCents        Int?     @map("cost_cents")
+  provider         String    @default("openrouter")
+  promptTokens     Int       @map("prompt_tokens")
+  completionTokens Int       @map("completion_tokens")
+  totalTokens      Int       @map("total_tokens")
+  costCents        Int?      @map("cost_cents")
   agentType        AgentType? @map("agent_type")
-  durationMs       Int?     @map("duration_ms")
-  createdAt        DateTime @default(now()) @map("created_at")
+  durationMs       Int?      @map("duration_ms")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   @@index([projectId])
   @@index([createdAt])
@@ -178,15 +183,15 @@ model UsageLog {
 }
 
 model ApiKey {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider  String   // "openrouter", "groq", "openai" etc.
-  keyHash   String   @map("key_hash") // bcrypt hash — never store plaintext
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String    // "openrouter", "groq", "openai" etc.
+  keyHash   String    @map("key_hash") // bcrypt hash — never store plaintext
   label     String?
-  isActive  Boolean  @default(true) @map("is_active")
+  isActive  Boolean   @default(true) @map("is_active")
   lastUsed  DateTime? @map("last_used")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@index([userId, provider])
   @@map("api_keys")

@@ -4,13 +4,31 @@
   "private": true,
   "description": "Archon — Production AI Software Engineering Platform",
   "scripts": {
-    "dev": "concurrently -k -n backend,frontend -c green,cyan \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
-    "dev:backend": "npm run dev --prefix backend",
-    "dev:frontend": "npm run dev --prefix frontend",
-    "build": "npm run build --prefix backend && npm run build --prefix frontend",
-    "db:migrate": "npm run db:migrate --prefix backend",
-    "db:studio": "npm run db:studio --prefix backend",
-    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend"
+    "dev":              "concurrently -k -n backend,frontend -c green,cyan \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:backend":      "npm run dev --prefix backend",
+    "dev:frontend":     "npm run dev --prefix frontend",
+
+    "build":            "npm run build --prefix backend && npm run build --prefix frontend",
+    "build:backend":    "npm run build --prefix backend",
+    "build:frontend":   "npm run build --prefix frontend",
+
+    "start":            "node backend/dist/backend/src/server.js",
+    "start:pm2":        "pm2 start ecosystem.config.cjs --env production",
+    "stop:pm2":         "pm2 stop archon-backend",
+    "reload:pm2":       "pm2 reload ecosystem.config.cjs --env production",
+
+    "prisma:generate":  "npm run db:generate --prefix backend",
+    "prisma:migrate":   "npm run db:migrate --prefix backend",
+    "prisma:deploy":    "npm run db:migrate:prod --prefix backend",
+    "prisma:studio":    "npm run db:studio --prefix backend",
+
+    "install:all":      "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "ci:all":           "npm ci && npm ci --prefix backend && npm ci --prefix frontend",
+
+    "type-check":       "npm run type-check --prefix backend && npm run type-check --prefix frontend",
+
+    "logs":             "pm2 logs archon-backend",
+    "status":           "pm2 status"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
