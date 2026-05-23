@@ -244,10 +244,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // ── Code View ─────────────────────────────────────────────────────
 
 function CodeView({ data }: { data: ArtifactPayload }) {
-  if (!data.frontend) return <p className="p-6 text-xs text-muted-foreground/40">No code generated yet.</p>;
+  const fileMap = data.frontend ?? (data as any).files;
+  if (!fileMap) return <p className="p-6 text-xs text-muted-foreground/40">No code generated yet.</p>;
 
-  const files = Object.entries(data.frontend).sort(([a], [b]) => {
-    const order = ['App.jsx', 'main.jsx', 'index.css', 'index.html'];
+  const files = Object.entries(fileMap as Record<string, string>).sort(([a], [b]) => {
+    const order = ['App.jsx', 'App.tsx', 'main.jsx', 'main.tsx', 'index.css', 'index.html'];
     return (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b));
   });
 
@@ -292,7 +293,8 @@ function CodeBlock({ filename, code }: { filename: string; code: string }) {
 // ── Files View ────────────────────────────────────────────────────
 
 function FilesView({ data, projectId }: { data: ArtifactPayload; projectId: string }) {
-  const files = data.frontend ? Object.keys(data.frontend) : [];
+  const fileMap = data.frontend ?? (data as any).files;
+  const files = fileMap ? Object.keys(fileMap as Record<string, string>) : [];
 
   return (
     <div className="p-6 space-y-4">
@@ -339,21 +341,32 @@ function PreviewView({ data, viewport, setViewport }: {
 
   const WIDTHS = { desktop: '100%', tablet: '768px', mobile: '375px' };
 
+  const fileMap = data.frontend ?? (data as any).files;
+
   const srcDoc = useMemo(() => {
-    if (!data.frontend) return '';
-    const css    = cleanCode(data.frontend['index.css'] ?? '');
-    const appJsx = cleanCode(data.frontend['App.jsx'] ?? '');
-    const html   = cleanCode(data.frontend['index.html'] ?? '');
+    if (!fileMap) return '';
+    const fm = fileMap as Record<string, string>;
+    const css    = cleanCode(fm['index.css'] ?? fm['src/index.css'] ?? fm['styles.css'] ?? '');
+    const html   = cleanCode(fm['index.html'] ?? '');
+
+    // Collect all component code from all JSX/TSX files
+    const componentFiles = Object.entries(fm)
+      .filter(([name]) => /\.(jsx|tsx)$/i.test(name) && !/(main|index)\.(jsx|tsx)$/i.test(name))
+      .sort(([a], [b]) => {
+        // App.jsx last so it can reference other components
+        if (/App\.(jsx|tsx)$/i.test(a)) return 1;
+        if (/App\.(jsx|tsx)$/i.test(b)) return -1;
+        return a.localeCompare(b);
+      });
+
+    const allComponentCode = componentFiles
+      .map(([, code]) => stripImportsExports(cleanCode(code)))
+      .join('\n\n');
 
     const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
     const linkTags  = (headMatch?.[1]?.match(/<link[^>]*>/gi) ?? []).join('\n');
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title      = titleMatch?.[1] ?? 'Preview';
-
-    const cleanedApp = appJsx
-      .replace(/^\s*import\s+.*?['"]\s*;?\s*$/gm, '')
-      .replace(/^\s*export\s+default\s+\w+\s*;?\s*$/gm, '')
-      .trim();
 
     return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
@@ -364,11 +377,11 @@ function PreviewView({ data, viewport, setViewport }: {
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head><body><div id="root"></div>
 <script type="text/babel" data-presets="react">
-const {useState,useEffect,useRef,useCallback,useMemo}=React;
-${cleanedApp}
+const {useState,useEffect,useRef,useCallback,useMemo,Fragment}=React;
+${allComponentCode}
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 </script></body></html>`;
-  }, [data.frontend]);
+  }, [fileMap]);
 
   useEffect(() => {
     setReady(false);
@@ -376,7 +389,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
     return () => clearTimeout(t);
   }, [srcDoc]);
 
-  if (!data.frontend) return <p className="p-6 text-xs text-muted-foreground/40">No preview available.</p>;
+  if (!fileMap) return <p className="p-6 text-xs text-muted-foreground/40">No preview available.</p>;
 
   return (
     <div className="flex flex-col h-full">
@@ -432,3 +445,37 @@ function cleanCode(raw: string): string {
   }
   return s;
 }
+
+/**
+ * Strip import/export statements for inline Babel preview.
+ * Handles:
+ *   - import ... from '...'
+ *   - export default function App() { ... }  → function App() { ... }
+ *   - export default App;                    → (removed)
+ *   - export function Foo() { ... }          → function Foo() { ... }
+ *   - export const Foo = ...                 → const Foo = ...
+ *   - export { ... }                         → (removed)
+ */
+function stripImportsExports(code: string): string {
+  return code
+    // Remove all import lines
+    .replace(/^\s*import\s+.*?['"].*?['"]\s*;?\s*$/gm, '')
+    // Remove type imports (TypeScript)
+    .replace(/^\s*import\s+type\s+.*$/gm, '')
+    // `export default function App()` → `function App()`
+    .replace(/^\s*export\s+default\s+function\s+/gm, 'function ')
+    // `export default class App` → `class App`
+    .replace(/^\s*export\s+default\s+class\s+/gm, 'class ')
+    // `export default App;` or `export default App` → removed
+    .replace(/^\s*export\s+default\s+\w+\s*;?\s*$/gm, '')
+    // `export function Foo()` → `function Foo()`
+    .replace(/^\s*export\s+function\s+/gm, 'function ')
+    // `export const Foo` → `const Foo`
+    .replace(/^\s*export\s+const\s+/gm, 'const ')
+    // `export let` → `let`
+    .replace(/^\s*export\s+let\s+/gm, 'let ')
+    // `export { ... }` lines → removed
+    .replace(/^\s*export\s*\{[^}]*\}\s*;?\s*$/gm, '')
+    .trim();
+}
+

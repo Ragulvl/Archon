@@ -5,7 +5,9 @@ export type AgentType =
   | 'BACKEND'
   | 'DATABASE'
   | 'REPAIR'
-  | 'EXPLAIN';
+  | 'EXPLAIN'
+  | 'QA'
+  | 'DEPLOY';
 
 export type AgentStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
 

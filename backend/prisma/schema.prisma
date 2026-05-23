@@ -1,12 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Archon Platform — Prisma Schema v3.0
+// Full AI coding platform data model
 
 generator client {
   provider      = "prisma-client-js"
-  // binaryTargets ensures the correct native binary is shipped for:
-  //   native       → build machine (Windows / macOS for local dev)
-  //   debian-openssl-3.0.x → Ubuntu 22.04 EC2 (OpenSSL 3)
-  //   linux-musl-openssl-3.0.x → Alpine-based Docker containers (optional)
   binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
@@ -47,45 +43,122 @@ enum AgentType {
   DATABASE
   REPAIR
   EXPLAIN
+  QA
+  DEPLOY
+}
+
+enum FileType {
+  FILE
+  DIRECTORY
 }
 
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
-  id          String    @id @default(cuid())
-  email       String?   @unique
-  name        String?
-  guestToken  String?   @unique @map("guest_token")
-  avatarUrl   String?   @map("avatar_url")
-  projects    Project[]
-  apiKeys     ApiKey[]
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  name          String?
+  passwordHash  String?   @map("password_hash")
+  guestToken    String?   @unique @map("guest_token")
+  avatarUrl     String?   @map("avatar_url")
+  refreshToken  String?   @map("refresh_token")
+  projects      Project[]
+  apiKeys       ApiKey[]
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   @@map("users")
 }
 
 model Project {
-  id           String         @id @default(cuid())
+  id           String            @id @default(cuid())
   name         String
   description  String?
-  userId       String         @map("user_id")
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String            @map("user_id")
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessions     ChatSession[]
   artifacts    Artifact[]
+  files        ProjectFile[]
+  snapshots    ProjectSnapshot[]
   context      ProjectContext?
   usageLogs    UsageLog[]
   deployments  Deployment[]
-  status       ProjectStatus  @default(ACTIVE)
-  thumbnail    String?        // S3 URL
-  techStack    Json?          @map("tech_stack")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  status       ProjectStatus     @default(ACTIVE)
+  thumbnail    String?
+  techStack    Json?             @map("tech_stack")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
 
   @@index([userId])
   @@index([status])
   @@map("projects")
 }
+
+// ─── Real File System ────────────────────────────────────────────────────────
+
+model ProjectFile {
+  id          String        @id @default(cuid())
+  projectId   String        @map("project_id")
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  path        String        // Full path: "src/components/Navbar.tsx"
+  name        String        // File name only: "Navbar.tsx"
+  type        FileType      @default(FILE)
+  content     String?       @db.Text // null for directories
+  language    String?       // "typescript", "css", etc.
+  mimeType    String?       @map("mime_type")
+  size        Int           @default(0)
+  hash        String?       // SHA-256 of content for change detection
+  parentPath  String?       @map("parent_path") // Parent directory path
+  versions    FileVersion[]
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@index([projectId, parentPath])
+  @@map("project_files")
+}
+
+model FileVersion {
+  id          String      @id @default(cuid())
+  fileId      String      @map("file_id")
+  file        ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  version     Int
+  content     String      @db.Text
+  hash        String
+  diff        String?     @db.Text // Unified diff from previous version
+  changeType  String      @default("modify") // "create" | "modify" | "delete"
+  snapshotId  String?     @map("snapshot_id")
+  snapshot    ProjectSnapshot? @relation(fields: [snapshotId], references: [id])
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@index([fileId])
+  @@index([snapshotId])
+  @@map("file_versions")
+}
+
+// ─── Version Control ─────────────────────────────────────────────────────────
+
+model ProjectSnapshot {
+  id           String        @id @default(cuid())
+  projectId    String        @map("project_id")
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version      Int
+  label        String?       // User-friendly label: "Before navbar fix"
+  description  String?
+  trigger      String        @default("auto") // "auto" | "manual" | "pre-edit" | "deploy"
+  fileVersions FileVersion[]
+  fileCount    Int           @default(0) @map("file_count")
+  totalSize    Int           @default(0) @map("total_size")
+  metadata     Json?         // { prompt, agentPipeline, intentType }
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@map("project_snapshots")
+}
+
+// ─── Chat ────────────────────────────────────────────────────────────────────
 
 model ChatSession {
   id        String        @id @default(cuid())
@@ -108,7 +181,7 @@ model ChatMessage {
   role       MessageRole
   content    String      @db.Text
   artifacts  Artifact[]
-  metadata   Json?       // { model, promptTokens, completionTokens, agentPipeline, durationMs }
+  metadata   Json?
   tokenCount Int?        @map("token_count")
   createdAt  DateTime    @default(now()) @map("created_at")
 
@@ -116,6 +189,8 @@ model ChatMessage {
   @@index([createdAt])
   @@map("chat_messages")
 }
+
+// ─── Artifacts (legacy, maintained for backward compat) ──────────────────────
 
 model Artifact {
   id          String        @id @default(cuid())
@@ -125,9 +200,9 @@ model Artifact {
   message     ChatMessage?  @relation(fields: [messageId], references: [id])
   type        ArtifactType
   name        String
-  content     String        @db.Text // JSON-encoded ArtifactPayload
+  content     String        @db.Text
   version     Int           @default(1)
-  storagePath String?       @map("storage_path") // S3 key for large artifacts
+  storagePath String?       @map("storage_path")
   files       GeneratedFile[]
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
@@ -141,7 +216,7 @@ model GeneratedFile {
   id         String   @id @default(cuid())
   artifactId String   @map("artifact_id")
   artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
-  path       String   // e.g. "src/App.jsx"
+  path       String
   content    String   @db.Text
   language   String?
   sizeBytes  Int?     @map("size_bytes")
@@ -151,17 +226,21 @@ model GeneratedFile {
   @@map("generated_files")
 }
 
+// ─── Project Context ─────────────────────────────────────────────────────────
+
 model ProjectContext {
   id          String   @id @default(cuid())
   projectId   String   @unique @map("project_id")
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  summary     String?  @db.Text  // AI-compressed context summary
+  summary     String?  @db.Text
   techStack   Json?    @map("tech_stack")
-  decisions   Json?    // Array of { timestamp, decision }
+  decisions   Json?
   lastUpdated DateTime @default(now()) @map("last_updated")
 
   @@map("project_contexts")
 }
+
+// ─── Usage / Analytics ───────────────────────────────────────────────────────
 
 model UsageLog {
   id               String    @id @default(cuid())
@@ -186,8 +265,8 @@ model ApiKey {
   id        String    @id @default(cuid())
   userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider  String    // "openrouter", "groq", "openai" etc.
-  keyHash   String    @map("key_hash") // bcrypt hash — never store plaintext
+  provider  String
+  keyHash   String    @map("key_hash")
   label     String?
   isActive  Boolean   @default(true) @map("is_active")
   lastUsed  DateTime? @map("last_used")
@@ -201,11 +280,12 @@ model Deployment {
   id          String   @id @default(cuid())
   projectId   String   @map("project_id")
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  provider    String   // "aws", "vercel", "render" etc.
-  status      String   @default("pending") // pending | running | success | failed
+  provider    String
+  status      String   @default("pending")
   url         String?
   logs        String?  @db.Text
   metadata    Json?
+  version     Int?     // Linked to ProjectSnapshot version
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

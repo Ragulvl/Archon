@@ -4,10 +4,11 @@ import { env, corsOrigins } from '../config/env';
 import { wsLogger } from '../utils/logger';
 import { setSocketServer } from '../services/ai/orchestrator.service';
 import { registerChatHandlers } from './chat.handler';
+import { attachRedisAdapter } from './redis.adapter';
 
 let io: SocketServer;
 
-export function initSocketServer(httpServer: HttpServer): SocketServer {
+export async function initSocketServer(httpServer: HttpServer): Promise<SocketServer> {
   io = new SocketServer(httpServer, {
     cors: {
       origin: corsOrigins.length === 1 && corsOrigins[0] === '*'
@@ -16,21 +17,17 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    // Prefer WebSocket, fall back to polling (required for Nginx compatibility)
     transports: ['websocket', 'polling'],
-    // Path must match Nginx proxy_pass location
     path: '/socket.io',
-    // Timeouts tuned for long AI generation streams
     pingTimeout: 60_000,
     pingInterval: 25_000,
     connectTimeout: 20_000,
-    // Allow upgrades through Nginx
     allowUpgrades: true,
-    // Compress messages
-    perMessageDeflate: {
-      threshold: 1024,
-    },
+    perMessageDeflate: { threshold: 1024 },
   });
+
+  // Attach Redis adapter for PM2 cluster support
+  await attachRedisAdapter(io);
 
   // Provide io to orchestrator for emitting streaming tokens
   setSocketServer(io);

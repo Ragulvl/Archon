@@ -139,20 +139,24 @@ app.use(errorMiddleware);
 // ─── HTTP Server + Socket.IO ──────────────────────────────────────────────────
 
 const server = http.createServer(app);
-initSocketServer(server);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 const PORT = Number(env.PORT) || 5000;
 
-server.listen(PORT, '0.0.0.0', () => {
-  logger.info(`\n🏗️  ${APP_NAME} v${APP_VERSION} running`);
-  logger.info(`   Mode:    ${env.NODE_ENV}`);
-  logger.info(`   Port:    ${PORT}`);
-  logger.info(`   Storage: ${env.STORAGE_DRIVER}`);
-  logger.info(`   CORS:    ${corsOrigins.join(', ')}`);
-  logger.info(`   Guest:   ${env.GUEST_MODE === 'true' ? 'enabled' : 'disabled'}\n`);
-});
+(async () => {
+  // Init Socket.IO with Redis adapter (async for Redis connection)
+  await initSocketServer(server);
+
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`\n🏗️  ${APP_NAME} v${APP_VERSION} running`);
+    logger.info(`   Mode:    ${env.NODE_ENV}`);
+    logger.info(`   Port:    ${PORT}`);
+    logger.info(`   Storage: ${env.STORAGE_DRIVER}`);
+    logger.info(`   CORS:    ${corsOrigins.join(', ')}`);
+    logger.info(`   Guest:   ${env.GUEST_MODE === 'true' ? 'enabled' : 'disabled'}\n`);
+  });
+})();
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 

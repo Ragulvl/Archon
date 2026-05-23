@@ -21,6 +21,8 @@ export const AGENT_DISPLAY_NAMES: Record<AgentType, string> = {
   FRONTEND:     '🎨  Frontend',
   REPAIR:       '🔧  Repair',
   EXPLAIN:      '📖  Explain',
+  QA:           '🧪  QA',
+  DEPLOY:       '🚀  Deploy',
 };
 
 /** Max tokens to use per agent call */
@@ -32,6 +34,8 @@ export const AGENT_TOKEN_BUDGETS: Record<AgentType, number> = {
   FRONTEND:     8000,
   REPAIR:       4000,
   EXPLAIN:      2000,
+  QA:           3000,
+  DEPLOY:       2000,
 };
 
 /** How many recent messages to inject as context */
