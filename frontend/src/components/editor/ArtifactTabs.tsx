@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, Code2, FolderTree, Eye, Download, Monitor, Tablet, Smartphone, Copy, Check, Loader2 } from 'lucide-react';
 import { useUIStore } from '../../store/ui.store';
+import { useFilesStore } from '../../store/files.store';
 import { useParams } from 'react-router-dom';
 import { downloadZipUrl } from '../../services/artifacts.api';
 import type { ArtifactPayload } from '@archon/shared';
@@ -9,6 +10,9 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-markup';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-javascript';
+import FileExplorer from './FileExplorer';
+import EditorTabs from './EditorTabs';
+import MonacoEditor from './MonacoEditor';
 
 const TABS = [
   { id: 'architecture', label: 'Architecture', icon: Layers },
@@ -78,15 +82,50 @@ export default function ArtifactTabs() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="h-full overflow-auto"
+              className={`h-full ${activeTab === 'code' || activeTab === 'files' ? 'overflow-hidden' : 'overflow-auto'}`}
             >
               {activeTab === 'architecture' && <ArchitectureView data={data} />}
-              {activeTab === 'code'         && <CodeView data={data} />}
-              {activeTab === 'files'        && <FilesView data={data} projectId={projectId!} />}
+              {activeTab === 'code'         && <InteractiveEditorView projectId={projectId!} />}
+              {activeTab === 'files'        && (
+                <div className="h-full max-w-sm border-r border-border/20 bg-surface-1/5">
+                  <FileExplorer projectId={projectId!} />
+                </div>
+              )}
               {activeTab === 'preview'      && <PreviewView data={data} viewport={previewViewport} setViewport={setPreviewViewport} />}
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+// ── Interactive Editor View ───────────────────────────────────────
+
+function InteractiveEditorView({ projectId }: { projectId: string }) {
+  const { openFiles, activeFileId } = useFilesStore();
+  const activeFile = openFiles.find(f => f.id === activeFileId);
+
+  return (
+    <div className="h-full flex overflow-hidden bg-background">
+      <div className="w-[200px] border-r border-border/20 flex-shrink-0 bg-surface-1/10">
+        <FileExplorer projectId={projectId} />
+      </div>
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        <EditorTabs />
+        <div className="flex-1 min-h-0 relative bg-[#0a0a0f]">
+          {activeFile ? (
+            <MonacoEditor
+              fileId={activeFile.id}
+              content={activeFile.content || ''}
+              language={activeFile.language || 'javascript'}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground/30 text-xs italic">
+              Select a file from the explorer to edit
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -341,7 +380,21 @@ function PreviewView({ data, viewport, setViewport }: {
 
   const WIDTHS = { desktop: '100%', tablet: '768px', mobile: '375px' };
 
-  const fileMap = data.frontend ?? (data as any).files;
+  const { files: storeFiles } = useFilesStore();
+
+  const fileMap = useMemo(() => {
+    if (storeFiles.length > 0) {
+      const map: Record<string, string> = {};
+      for (const f of storeFiles) {
+        if (f.type === 'FILE') {
+          const cleanPath = f.path.replace(/^src\//, '');
+          map[cleanPath] = f.content || '';
+        }
+      }
+      return map;
+    }
+    return data.frontend ?? (data as any).files;
+  }, [storeFiles, data]);
 
   const srcDoc = useMemo(() => {
     if (!fileMap) return '';
@@ -367,11 +420,16 @@ function PreviewView({ data, viewport, setViewport }: {
     const linkTags  = (headMatch?.[1]?.match(/<link[^>]*>/gi) ?? []).join('\n');
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title      = titleMatch?.[1] ?? 'Preview';
+    const extScriptTags = (headMatch?.[1]?.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) ?? [])
+      .filter(tag => !/src\/|main|module/i.test(tag))
+      .join('\n');
 
     return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>${title}</title>${linkTags}
 <style>${css}</style>
+<script src="https://cdn.tailwindcss.com"></script>
+${extScriptTags}
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>

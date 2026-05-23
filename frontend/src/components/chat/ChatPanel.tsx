@@ -83,7 +83,13 @@ export default function ChatPanel({
         )}
 
         {!isLoading && messages.length === 0 && (
-          <EmptyChatState />
+          <EmptyChatState onSelectSuggestion={(s) => {
+            setInput(s);
+            setTimeout(() => {
+              adjustHeight();
+              textareaRef.current?.focus();
+            }, 0);
+          }} />
         )}
 
         <AnimatePresence initial={false}>
@@ -140,7 +146,7 @@ export default function ChatPanel({
   );
 }
 
-function EmptyChatState() {
+function EmptyChatState({ onSelectSuggestion }: { onSelectSuggestion: (s: string) => void }) {
   const suggestions = [
     'Build a Zomato food delivery clone',
     'Create a Spotify music streaming app',
@@ -159,9 +165,13 @@ function EmptyChatState() {
       </div>
       <div className="space-y-1.5">
         {suggestions.map(s => (
-          <div key={s} className="text-xs text-muted-foreground/40 px-3 py-2 rounded-lg border border-border/15 bg-surface-2/20 font-mono truncate">
+          <button
+            key={s}
+            onClick={() => onSelectSuggestion(s)}
+            className="w-full text-left text-xs text-muted-foreground/40 hover:text-foreground/80 px-3 py-2 rounded-lg border border-border/15 bg-surface-2/20 hover:bg-surface-2/30 font-mono truncate transition-all duration-200 cursor-pointer block"
+          >
             {s}
-          </div>
+          </button>
         ))}
       </div>
     </div>

@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import { getSocket, WS_EVENTS, joinSession } from '../services/socket.client';
 import { useChatStore } from '../store/chat.store';
 import { useUIStore } from '../store/ui.store';
+import { useFilesStore } from '../store/files.store';
+import { filesApi } from '../services/files.api';
 import type { AgentState, ArtifactPayload, ChatMessage } from '@archon/shared';
 
-export function useSocket(sessionId: string | null) {
+export function useSocket(sessionId: string | null, projectId: string | null) {
   const { appendToken, commitStreamedMessage, setAgentState, resetAgentStates, setStreaming } = useChatStore();
   const { setCurrentArtifactData, setActiveTab } = useUIStore();
 
@@ -13,6 +15,13 @@ export function useSocket(sessionId: string | null) {
 
     const socket = getSocket();
     joinSession(sessionId);
+
+    const onFilesChanged = () => {
+      if (!projectId) return;
+      const { setFileTree, setFiles } = useFilesStore.getState();
+      filesApi.tree(projectId).then(setFileTree).catch(console.error);
+      filesApi.list(projectId).then(setFiles).catch(console.error);
+    };
 
     const onToken = ({ token }: { token: string }) => {
       appendToken(token);
@@ -62,6 +71,8 @@ export function useSocket(sessionId: string | null) {
     socket.on(WS_EVENTS.ARTIFACT_UPDATE, onArtifactUpdate);
     socket.on(WS_EVENTS.AGENT_STATUS,    onAgentStatus);
     socket.on(WS_EVENTS.CHAT_ERROR,      onError);
+    socket.on('files:created',           onFilesChanged);
+    socket.on('files:updated',           onFilesChanged);
 
     return () => {
       socket.off(WS_EVENTS.CHAT_TOKEN,      onToken);
@@ -69,6 +80,8 @@ export function useSocket(sessionId: string | null) {
       socket.off(WS_EVENTS.ARTIFACT_UPDATE, onArtifactUpdate);
       socket.off(WS_EVENTS.AGENT_STATUS,    onAgentStatus);
       socket.off(WS_EVENTS.CHAT_ERROR,      onError);
+      socket.off('files:created',           onFilesChanged);
+      socket.off('files:updated',           onFilesChanged);
     };
-  }, [sessionId, appendToken, commitStreamedMessage, setAgentState, resetAgentStates, setCurrentArtifactData, setActiveTab]);
+  }, [sessionId, projectId, appendToken, commitStreamedMessage, setAgentState, resetAgentStates, setCurrentArtifactData, setActiveTab]);
 }

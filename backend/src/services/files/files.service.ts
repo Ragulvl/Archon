@@ -328,6 +328,7 @@ export async function listFiles(projectId: string) {
       path: true,
       name: true,
       type: true,
+      content: true,
       language: true,
       size: true,
       parentPath: true,
