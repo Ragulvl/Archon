@@ -61,6 +61,7 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
   const { sessionId, projectId, userMessage, userId } = input;
   const jobId = uuidv4();
   const startedAt = Date.now();
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   aiLogger.info(`[${jobId}] Orchestrating: "${userMessage.slice(0, 80)}"`);
 
@@ -113,6 +114,24 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
   if (intent === 'new_build' || intent === 'regenerate') {
     // ── CONSOLIDATED SINGLE CALL ──────────────────────────────────
     // Generates architecture + code in ONE call to avoid rate limits
+    
+    // Simulate pipeline progression for a premium UX
+    emit(sessionId, 'agent:status', { jobId, agent: 'PLANNER', status: 'running', progress: 20 });
+    await delay(1000);
+    emit(sessionId, 'agent:status', { jobId, agent: 'PLANNER', status: 'done', progress: 100 });
+
+    emit(sessionId, 'agent:status', { jobId, agent: 'ARCHITECTURE', status: 'running', progress: 40 });
+    await delay(1000);
+    emit(sessionId, 'agent:status', { jobId, agent: 'ARCHITECTURE', status: 'done', progress: 100 });
+
+    emit(sessionId, 'agent:status', { jobId, agent: 'DATABASE', status: 'running', progress: 60 });
+    await delay(800);
+    emit(sessionId, 'agent:status', { jobId, agent: 'DATABASE', status: 'done', progress: 100 });
+
+    emit(sessionId, 'agent:status', { jobId, agent: 'BACKEND', status: 'running', progress: 80 });
+    await delay(800);
+    emit(sessionId, 'agent:status', { jobId, agent: 'BACKEND', status: 'done', progress: 100 });
+
     emit(sessionId, 'agent:status', { jobId, agent: 'FRONTEND', status: 'running', progress: 0 });
 
     try {
@@ -450,24 +469,148 @@ function buildAgentUserMessage(
 Generate complete, working code. Return valid JSON. First char {, last char }.`;
   }
 
-  if (relevantFiles.length > 0) {
-    const fileContext = relevantFiles.map(f =>
-      `### ${f.path}\n\`\`\`\n${f.content.slice(0, 4000)}\n\`\`\``
-    ).join('\n\n');
+  const fileContext = relevantFiles.length > 0
+    ? relevantFiles.map(f => `### ${f.path}\n\`\`\`\n${f.content.slice(0, 4000)}\n\`\`\``).join('\n\n')
+    : '';
 
-    return `User request: "${userMessage}"
+  const fileContextStr = fileContext
+    ? `\n\nCurrent project files:\n\n${fileContext}`
+    : '';
 
-Current project files:
+  // 1. Planner Agent Prompts
+  if (agentType === 'PLANNER') {
+    return `User request: "${userMessage}"${fileContextStr}
 
-${fileContext}
-
-Apply the requested change using TARGETED edits. Return search/replace blocks.
-Only modify what needs to change. Do NOT rewrite entire files.`;
+Analyze the user's request and the existing project files, then create a structured step-by-step execution plan.
+Return ONLY valid JSON matching the PLANNER schema:
+{
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Design database schema",
+      "agent": "DATABASE",
+      "description": "Create tables...",
+      "dependencies": [],
+      "priority": "high"
+    }
+  ],
+  "approach": "Brief description of overall approach",
+  "estimatedComplexity": "simple" | "moderate" | "complex"
+}`;
   }
 
-  return `User request: "${userMessage}"
+  // 2. Architecture Agent Prompts
+  if (agentType === 'ARCHITECTURE') {
+    const plannerApproach = previousData?.approach 
+      ? `Planner's proposed approach:\n${previousData.approach}\n\n` 
+      : '';
+    return `User request: "${userMessage}"
+${plannerApproach}${fileContextStr}
 
-Apply the requested changes. Return valid JSON with the modifications.`;
+Analyze the user's request, the existing files, and the proposed planning approach. Design the updated system architecture.
+Return ONLY valid JSON matching the ARCHITECTURE schema.`;
+  }
+
+  // 3. Database Agent Prompts
+  if (agentType === 'DATABASE') {
+    return `User request: "${userMessage}"${fileContextStr}
+
+Design the required database schema changes or migrations based on the user's request and existing files.
+Return ONLY valid JSON matching the DATABASE schema:
+{
+  "schema": "SQL schema structure",
+  "migrations": ["ALTER TABLE ..."],
+  "seedData": "INSERT INTO ..."
+}`;
+  }
+
+  // 4. Explain Agent Prompts
+  if (agentType === 'EXPLAIN') {
+    return `User request: "${userMessage}"${fileContextStr}
+
+Provide a clear, detailed technical explanation of the requested concept or files.
+Return a JSON with key "explanation": string containing your response in markdown format.`;
+  }
+
+  // 5. Frontend Agent Prompts (Modification Mode)
+  if (agentType === 'FRONTEND') {
+    const archContext = previousData?.architecture || previousData?.features
+      ? `System Architecture Context:\n${JSON.stringify(previousData.architecture || previousData, null, 2)}\n\n`
+      : '';
+    return `User request: "${userMessage}"
+${archContext}${fileContextStr}
+
+Apply the requested frontend/UI changes using TARGETED search/replace edits.
+Return ONLY valid JSON with this structure:
+{
+  "edits": [
+    {
+      "file": "path/to/file",
+      "search": "exact code from current file to find",
+      "replace": "new code to replace with"
+    }
+  ],
+  "explanation": "Brief description of changes made"
+}
+
+CRITICAL RULES for targeted edits:
+1. The "search" block MUST be a exact character-for-character match of the text in the file, including leading spaces, tabs, and line breaks.
+2. Only modify what is strictly necessary. Do NOT rewrite entire files.
+3. Keep styling consistent with vanilla CSS variables and brand colors.`;
+  }
+
+  // 6. Backend Agent Prompts (Modification Mode)
+  if (agentType === 'BACKEND') {
+    const archContext = previousData?.architecture || previousData?.apiEndpoints
+      ? `System Architecture Context:\n${JSON.stringify(previousData.architecture || previousData, null, 2)}\n\n`
+      : '';
+    return `User request: "${userMessage}"
+${archContext}${fileContextStr}
+
+Apply the requested backend/API changes using TARGETED search/replace edits.
+Return ONLY valid JSON with this structure:
+{
+  "edits": [
+    {
+      "file": "path/to/file",
+      "search": "exact code from current file to find",
+      "replace": "new code to replace with"
+    }
+  ],
+  "explanation": "Brief description of changes made"
+}
+
+CRITICAL RULES for targeted edits:
+1. The "search" block MUST be a exact character-for-character match of the text in the file, including leading spaces, tabs, and line breaks.
+2. Only modify what is strictly necessary. Do NOT rewrite entire files.
+3. Ensure backend code includes robust error handling and validation.`;
+  }
+
+  // 7. Repair & Edit Agents
+  if (agentType === 'REPAIR' || (agentType as string) === 'EDIT') {
+    return `User request: "${userMessage}"${fileContextStr}
+
+Apply the requested changes/fixes using TARGETED search/replace edits.
+Return ONLY valid JSON with this structure:
+{
+  "edits": [
+    {
+      "file": "path/to/file",
+      "search": "exact code from current file to find",
+      "replace": "new code to replace with"
+    }
+  ],
+  "explanation": "What was changed and why"
+}
+
+CRITICAL RULES for targeted edits:
+1. The "search" block MUST be a exact character-for-character match of the text in the file, including leading spaces, tabs, and line breaks.
+2. Only modify what is strictly necessary. Do NOT rewrite entire files.`;
+  }
+
+  return `User request: "${userMessage}"${fileContextStr}
+
+Apply the requested changes. Return valid JSON matching the agent's schema.`;
 }
 
 // ─── Response Text Builder ────────────────────────────────────────────────────

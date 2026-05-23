@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { ChatSession, ChatMessage, AgentState } from '@archon/shared';
+import type { ChatSession, ChatMessage, AgentState, AgentType } from '@archon/shared';
 
 interface ChatStore {
   sessions: ChatSession[];
@@ -19,6 +19,7 @@ interface ChatStore {
   appendToken: (token: string) => void;
   commitStreamedMessage: (message: ChatMessage) => void;
   setAgentState: (state: AgentState) => void;
+  setAgentPipeline: (agents: AgentType[]) => void;
   resetAgentStates: () => void;
   setStreaming: (streaming: boolean) => void;
   setLoading: (loading: boolean) => void;
@@ -61,6 +62,15 @@ export const useChatStore = create<ChatStore>()(
             ? state.agentStates.map(a => a.agent === agentState.agent ? { ...a, ...agentState } : a)
             : [...state.agentStates, agentState],
         })),
+
+      setAgentPipeline: (agents) =>
+        set({
+          agentStates: agents.map((agent) => ({
+            agent,
+            status: 'idle',
+            progress: 0,
+          })),
+        }),
 
       resetAgentStates: () => set({ agentStates: [], streamingContent: '', isStreaming: false }),
 
