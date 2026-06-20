@@ -571,29 +571,66 @@ function cleanCode(raw: string): string {
 
 /**
  * Strip import/export statements for inline Babel preview.
- * Handles:
- *   - import ... from '...'
- *   - export default function App() { ... }  → function App() { ... }
- *   - export default App;                    → (removed)
- *   - export function Foo() { ... }          → function Foo() { ... }
- *   - export const Foo = ...                 → const Foo = ...
- *   - export { ... }                         → (removed)
+ *
+ * Uses a two-phase approach:
+ *   1. Line-by-line: collapse multi-line import statements into single lines,
+ *      then drop every line that starts with `import` (any form).
+ *   2. Regex: transform export keywords on remaining code.
+ *   3. Nuclear fallback: drop any remaining line still starting with `import`.
+ *
+ * This is intentionally defensive against all LLM output variations.
  */
 function stripImportsExports(code: string): string {
-  return code
-    // Remove multiline and single line imports (import ... from '...')
-    .replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?/g, '')
-    // Remove side-effect imports (import './style.css')
-    .replace(/import\s+['"][^'"]+['"]\s*;?/g, '')
-    // Remove export ... from '...'
-    .replace(/export\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?/g, '')
-    // Remove type imports (TypeScript)
-    .replace(/^\s*import\s+type\s+.*$/gm, '')
+  // ── Phase 1: collapse multi-line imports & drop all import lines ────────────
+  const rawLines = code.split('\n');
+  const cleanLines: string[] = [];
+  let accumulating = false;
+  let accumulated = '';
+
+  for (const line of rawLines) {
+    const trimmed = line.trimStart();
+
+    if (accumulating) {
+      // We're inside a multi-line import — keep collecting until we find the closing
+      accumulated += ' ' + trimmed;
+      // Done when we hit a quote-then-optional-semicolon pattern signalling end of import
+      if (/['"][^'"]*['"]\s*;?\s*$/.test(trimmed) || /^\s*\}\s*(?:from\s+['"][^'"]+['"]\s*;?)?\s*$/.test(trimmed)) {
+        // This line closes the import — discard everything accumulated
+        accumulating = false;
+        accumulated = '';
+      }
+      // Either way, don't add this line to cleanLines (it's part of an import)
+      continue;
+    }
+
+    // Check if this line STARTS an import statement
+    if (/^\s*import\s/.test(line)) {
+      // Single-line import: ends with a quote+semicolon on the same line
+      if (/['"][^'"]*['"]\s*;?\s*$/.test(trimmed)) {
+        // Complete single-line import — discard
+        continue;
+      } else {
+        // Multi-line import starts here — start accumulating and discard
+        accumulating = true;
+        accumulated = trimmed;
+        continue;
+      }
+    }
+
+    cleanLines.push(line);
+  }
+
+  let result = cleanLines.join('\n');
+
+  // ── Phase 2: transform export keywords ─────────────────────────────────────
+  result = result
+    // `export ... from '...'` re-export lines → remove
+    .replace(/^\s*export\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
     // `export default function App()` → `function App()`
     .replace(/^\s*export\s+default\s+function\s+/gm, 'function ')
     // `export default class App` → `class App`
     .replace(/^\s*export\s+default\s+class\s+/gm, 'class ')
-    // `export default App;` or `export default App` → removed
+    // `export default App;` → remove
     .replace(/^\s*export\s+default\s+\w+\s*;?\s*$/gm, '')
     // `export function Foo()` → `function Foo()`
     .replace(/^\s*export\s+function\s+/gm, 'function ')
@@ -602,7 +639,15 @@ function stripImportsExports(code: string): string {
     // `export let` → `let`
     .replace(/^\s*export\s+let\s+/gm, 'let ')
     // `export { ... }` lines → removed
-    .replace(/^\s*export\s*\{[^}]*\}\s*;?\s*$/gm, '')
+    .replace(/^\s*export\s*\{[^}]*\}\s*;?\s*$/gm, '');
+
+  // ── Phase 3: nuclear fallback — drop any line still starting with `import` ─
+  result = result
+    .split('\n')
+    .filter(line => !/^\s*import\s/.test(line))
+    .join('\n')
     .trim();
+
+  return result;
 }
 
