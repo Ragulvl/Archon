@@ -3,6 +3,8 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "ignoreDeprecations": "5.0",
+    "rootDir": "..",
     "lib": ["ES2022"],
     "outDir": "./dist",
     "strict": true,
