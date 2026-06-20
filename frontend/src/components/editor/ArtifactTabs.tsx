@@ -1,10 +1,13 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, Code2, FolderTree, Eye, Download, Monitor, Tablet, Smartphone, Copy, Check, Loader2 } from 'lucide-react';
+import { Layers, Code2, FolderTree, Eye, Download, Monitor, Tablet, Smartphone, Copy, Check, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useUIStore } from '../../store/ui.store';
 import { useFilesStore } from '../../store/files.store';
+import { useChatStore } from '../../store/chat.store';
 import { useParams } from 'react-router-dom';
 import { downloadZipUrl } from '../../services/artifacts.api';
+import { validateComponentCode } from '../../utils/previewValidator';
+import { sendChatMessage } from '../../services/socket.client';
 import type { ArtifactPayload } from '@archon/shared';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-markup';
@@ -377,10 +380,12 @@ function PreviewView({ data, viewport, setViewport }: {
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const WIDTHS = { desktop: '100%', tablet: '768px', mobile: '375px' };
 
   const { files: storeFiles } = useFilesStore();
+  const { id: projectId } = useParams<{ id: string }>();
 
   const fileMap = useMemo(() => {
     if (storeFiles.length > 0) {
@@ -396,7 +401,11 @@ function PreviewView({ data, viewport, setViewport }: {
     return data.frontend ?? (data as any).files;
   }, [storeFiles, data]);
 
+  // ── Build srcDoc with pre-Babel validation ────────────────────────
   const srcDoc = useMemo(() => {
+    // Reset any previous error each time fileMap changes
+    setPreviewError(null);
+
     if (!fileMap) return '';
     const fm = fileMap as Record<string, string>;
     const css    = cleanCode(fm['index.css'] ?? fm['src/index.css'] ?? fm['styles.css'] ?? '');
@@ -412,9 +421,27 @@ function PreviewView({ data, viewport, setViewport }: {
         return a.localeCompare(b);
       });
 
-    const allComponentCode = componentFiles
-      .map(([, code]) => stripImportsExports(cleanCode(code)))
-      .join('\n\n');
+    // ── Validate each component file before joining ───────────────────
+    const processedCodes: string[] = [];
+    for (const [filename, rawCode] of componentFiles) {
+      const stripped = stripImportsExports(cleanCode(rawCode));
+      const validation = validateComponentCode(stripped);
+
+      if (validation.ok) {
+        // Code is clean — use as-is
+        processedCodes.push(stripped);
+      } else if (validation.fixedCode) {
+        // Auto-fix succeeded — use fixed code silently
+        console.info(`[Archon Preview] Auto-fixed bare return in ${filename}`);
+        processedCodes.push(validation.fixedCode);
+      } else {
+        // Unfixable — block preview and surface error
+        setPreviewError(validation.error ?? 'The AI generated invalid React code.');
+        return '';
+      }
+    }
+
+    const allComponentCode = processedCodes.join('\n\n');
 
     const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
     const linkTags  = (headMatch?.[1]?.match(/<link[^>]*>/gi) ?? []).join('\n');
@@ -447,6 +474,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
     return () => clearTimeout(t);
   }, [srcDoc]);
 
+  // Regenerate handler — sends a fresh message via the existing socket
+  const handleRegenerate = useCallback(() => {
+    const { activeSession } = useChatStore.getState();
+    if (!activeSession || !projectId) return;
+    sendChatMessage(activeSession.id, projectId, 'Regenerate the application. The previous attempt had invalid code structure.');
+  }, [projectId]);
+
   if (!fileMap) return <p className="p-6 text-xs text-muted-foreground/40">No preview available.</p>;
 
   return (
@@ -467,24 +501,55 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
         <div className="ml-auto text-[9px] font-mono text-muted-foreground/20">⚛ React Preview</div>
       </div>
 
-      {/* Iframe */}
+      {/* Content: error panel OR iframe */}
       <div className="flex-1 overflow-auto bg-[#1a1a2e] p-4">
-        <div className="mx-auto transition-all duration-500 rounded-xl overflow-hidden shadow-2xl" style={{ width: WIDTHS[viewport], minHeight: 500 }}>
-          {!ready && (
-            <div className="flex items-center justify-center h-64 bg-surface-1/50">
-              <Loader2 className="w-4 h-4 animate-spin text-violet/40" />
-            </div>
-          )}
-          <iframe
-            ref={iframeRef}
-            srcDoc={srcDoc}
-            sandbox="allow-scripts"
-            title="Live Preview"
-            className={`w-full bg-white transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
-            style={{ minHeight: 600, border: 'none', display: 'block' }}
-          />
+        {previewError ? (
+          <PreviewErrorPanel message={previewError} onRegenerate={handleRegenerate} />
+        ) : (
+          <div className="mx-auto transition-all duration-500 rounded-xl overflow-hidden shadow-2xl" style={{ width: WIDTHS[viewport], minHeight: 500 }}>
+            {!ready && (
+              <div className="flex items-center justify-center h-64 bg-surface-1/50">
+                <Loader2 className="w-4 h-4 animate-spin text-violet/40" />
+              </div>
+            )}
+            <iframe
+              ref={iframeRef}
+              srcDoc={srcDoc}
+              sandbox="allow-scripts"
+              title="Live Preview"
+              className={`w-full bg-white transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`}
+              style={{ minHeight: 600, border: 'none', display: 'block' }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Preview Error Panel ───────────────────────────────────────────
+
+function PreviewErrorPanel({ message, onRegenerate }: { message: string; onRegenerate: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full min-h-[400px] gap-6 p-8">
+      <div className="relative">
+        <div className="absolute inset-0 rounded-full bg-red/5 blur-2xl scale-150" />
+        <div className="relative w-16 h-16 rounded-2xl bg-red/10 border border-red/20 flex items-center justify-center">
+          <AlertTriangle className="w-7 h-7 text-red/60" />
         </div>
       </div>
+      <div className="text-center max-w-sm">
+        <h3 className="text-sm font-semibold mb-2 text-foreground/80">Preview Failed</h3>
+        <p className="text-xs text-muted-foreground/50 leading-relaxed">{message}</p>
+      </div>
+      <button
+        id="preview-regenerate-btn"
+        onClick={onRegenerate}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet/15 border border-violet/25 text-violet/80 text-xs font-medium hover:bg-violet/25 hover:border-violet/40 transition-all duration-200"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+        Regenerate
+      </button>
     </div>
   );
 }
@@ -516,8 +581,12 @@ function cleanCode(raw: string): string {
  */
 function stripImportsExports(code: string): string {
   return code
-    // Remove all import lines
-    .replace(/^\s*import\s+.*?['"].*?['"]\s*;?\s*$/gm, '')
+    // Remove multiline and single line imports (import ... from '...')
+    .replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?/g, '')
+    // Remove side-effect imports (import './style.css')
+    .replace(/import\s+['"][^'"]+['"]\s*;?/g, '')
+    // Remove export ... from '...'
+    .replace(/export\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?/g, '')
     // Remove type imports (TypeScript)
     .replace(/^\s*import\s+type\s+.*$/gm, '')
     // `export default function App()` → `function App()`
