@@ -14,7 +14,7 @@ import { aiLogger } from '../../utils/logger';
 export interface DeployConfig {
   projectId: string;
   userId: string;
-  provider: 'vercel' | 'railway' | 'render' | 'aws';
+  provider: 'vercel' | 'railway' | 'render';
   apiToken?: string;
   teamId?: string;
   projectName?: string;

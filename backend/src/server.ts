@@ -92,24 +92,8 @@ app.get('/health/db', async (_req, res) => {
 });
 
 app.get('/health/storage', async (_req, res) => {
-  if (env.STORAGE_DRIVER === 's3') {
-    try {
-      // Lightweight check: list at most 1 object from the bucket
-      const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-      const s3 = new S3Client({ region: env.AWS_REGION });
-      await s3.send(new ListObjectsV2Command({ Bucket: env.AWS_S3_BUCKET, MaxKeys: 1 }));
-      res.json({ status: 'ok', driver: 's3', bucket: env.AWS_S3_BUCKET });
-    } catch (err) {
-      res.status(503).json({
-        status: 'error',
-        driver: 's3',
-        error: (err as Error).message,
-      });
-    }
-  } else {
-    // Local storage — just report disk is accessible
-    res.json({ status: 'ok', driver: 'local' });
-  }
+  // Local storage — just report disk is accessible
+  res.json({ status: 'ok', driver: 'local' });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────

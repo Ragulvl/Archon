@@ -62,12 +62,12 @@ export default function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard icon={<Database className="w-4 h-4 text-cyan/60" />} title="Database">
-            <InfoRow label="Provider" value="PostgreSQL (AWS RDS)" />
+            <InfoRow label="Provider" value="PostgreSQL" />
             <InfoRow label="ORM" value="Prisma" />
           </SettingsCard>
 
           <SettingsCard icon={<Cloud className="w-4 h-4 text-blue/60" />} title="Storage">
-            <InfoRow label="Driver" value="AWS S3 (IAM Role)" />
+            <InfoRow label="Driver" value="Local Filesystem" />
             <InfoRow label="Auth" value="Instance Profile (EC2)" />
           </SettingsCard>
         </div>

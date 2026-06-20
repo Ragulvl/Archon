@@ -28,7 +28,7 @@ const envSchema = z.object({
   PORT:     z.string().default('5000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  // Database (AWS RDS PostgreSQL)
+  // Database (PostgreSQL)
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
   // AI Providers
@@ -37,11 +37,6 @@ const envSchema = z.object({
   OPENROUTER_SITE_URL: z.string().default('https://archon.dinez.in'),
   GROQ_API_KEYS:       z.string().optional(),
 
-  // AWS
-  AWS_REGION:            z.string().default('ap-southeast-2'),
-  AWS_S3_BUCKET:         z.string().default('archon-artifacts'),
-  AWS_ACCESS_KEY_ID:     z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
 
   // Auth (JWT)
   JWT_SECRET:     z.string().min(1, 'JWT_SECRET is required'),
@@ -55,7 +50,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional(),
 
   // Feature flags
-  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  STORAGE_DRIVER: z.enum(['local']).default('local'),
   GUEST_MODE:     z.string().default('true'),
 }).superRefine((data, ctx) => {
   // Enforce strong JWT_SECRET in production

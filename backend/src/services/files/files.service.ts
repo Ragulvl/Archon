@@ -2,7 +2,7 @@
  * File System Engine — Real CRUD for project files.
  *
  * Every file lives in `project_files` with full metadata.
- * Content is stored in PostgreSQL Text columns (with S3 offload path for later).
+ * Content is stored in PostgreSQL Text columns.
  * All mutations create FileVersion records for rollback.
  */
 

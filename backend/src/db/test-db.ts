@@ -1,7 +1,7 @@
 import dns from 'dns';
 import net from 'net';
 
-const host = 'archon-db.ch0oawo2ozq0.ap-southeast-2.rds.amazonaws.com';
+const host = 'localhost';
 const port = 5432;
 
 console.log(`Resolving DNS for ${host}...`);
